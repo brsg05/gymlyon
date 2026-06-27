@@ -98,3 +98,26 @@ export interface Meta {
   ativa: boolean;
   created_at: string;
 }
+
+export interface RotinaExercicio {
+  id: string;
+  user_id: string;
+  dia_semana: number;
+  exercicio_id: string;
+  ordem: number;
+  created_at: string;
+}
+
+export interface SerieRegistro {
+  id: string;
+  user_id: string;
+  exercicio_id: string;
+  dia_semana: number;
+  series: number;
+  repeticoes: number;
+  peso_kg: number;
+  registrado_em: string;
+  data_referencia: string;
+  ordem: number;
+  created_at: string;
+}

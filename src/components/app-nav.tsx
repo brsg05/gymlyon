@@ -6,11 +6,11 @@ import { Home, UtensilsCrossed, Dumbbell, Target, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
-  { href: "/dashboard", label: "Hoje", icon: Home },
-  { href: "/alimentacao", label: "Refeições", icon: UtensilsCrossed },
-  { href: "/treinos", label: "Treinos", icon: Dumbbell },
-  { href: "/metas", label: "Metas", icon: Target },
-  { href: "/mais", label: "Mais", icon: Menu },
+  { href: "/dashboard", label: "Hoje", icon: Home, match: ["/dashboard"] },
+  { href: "/alimentacao", label: "Refeições", icon: UtensilsCrossed, match: ["/alimentacao"] },
+  { href: "/rotina", label: "Treinos", icon: Dumbbell, match: ["/rotina", "/treinos"] },
+  { href: "/metas", label: "Metas", icon: Target, match: ["/metas"] },
+  { href: "/mais", label: "Mais", icon: Menu, match: ["/mais"] },
 ];
 
 export function AppNav() {
@@ -18,8 +18,8 @@ export function AppNav() {
   return (
     <nav className="sticky bottom-0 z-40 border-t bg-card/95 backdrop-blur safe-bottom">
       <div className="mx-auto flex max-w-lg items-stretch justify-around px-2 pt-1.5">
-        {ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || pathname.startsWith(href + "/");
+        {ITEMS.map(({ href, label, icon: Icon, match }) => {
+          const active = match.some((m) => pathname === m || pathname.startsWith(m + "/"));
           return (
             <Link
               key={href}

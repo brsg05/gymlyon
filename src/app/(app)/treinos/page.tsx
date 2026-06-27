@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Stopwatch } from "@/components/stopwatch";
 import { TrainingCalendar } from "@/components/training-calendar";
+import { TreinosTabs } from "@/components/treinos-tabs";
 import { createClient } from "@/lib/supabase/server";
 import { TZ, now, monthRangeUtc, formatDuration, formatDateBR, formatTimeBR } from "@/lib/domain/time";
 import type { Treino } from "@/lib/types";
@@ -36,6 +37,7 @@ export default async function TreinosPage() {
     <>
       <PageHeader title="Treinos" subtitle="Cronômetro e histórico" back="/dashboard" />
       <div className="flex flex-col gap-5 px-4 pt-4">
+        <TreinosTabs />
         <Stopwatch />
 
         <Card>

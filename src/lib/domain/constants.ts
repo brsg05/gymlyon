@@ -52,3 +52,14 @@ export const META_UNIT: Record<MetaTipo, string> = {
 };
 
 export const WATER_PRESETS = [200, 300, 500, 1000];
+
+export const WEEKDAYS_SHORT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+export const WEEKDAYS_FULL = [
+  "Domingo",
+  "Segunda-feira",
+  "Terça-feira",
+  "Quarta-feira",
+  "Quinta-feira",
+  "Sexta-feira",
+  "Sábado",
+];

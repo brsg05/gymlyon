@@ -38,6 +38,11 @@ export function ageFromBirth(birth: string, ref: Date = new Date()): number {
   return age;
 }
 
+/** Current weekday in app tz (0=domingo .. 6=sábado). */
+export function todayWeekday(): number {
+  return now().getDay();
+}
+
 export function hoursBetween(start: string, end: string): number {
   return (new Date(end).getTime() - new Date(start).getTime()) / 3_600_000;
 }
