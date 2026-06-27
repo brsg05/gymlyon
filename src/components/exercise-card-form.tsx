@@ -47,6 +47,14 @@ export function ExerciseCardForm({
     return q ? list.filter((e) => e.nome.toLowerCase().includes(q)) : list;
   }, [query, list]);
 
+  const grupos = useMemo(
+    () =>
+      [...new Set(list.map((e) => e.grupo_muscular).filter((g): g is string => !!g))].sort((a, b) =>
+        a.localeCompare(b, "pt-BR"),
+      ),
+    [list],
+  );
+
   function reset() {
     setMode("pick");
     setQuery("");
@@ -173,7 +181,18 @@ export function ExerciseCardForm({
               <Input id="exnome" autoFocus value={newEx.nome} onChange={(e) => setNewEx((p) => ({ ...p, nome: e.target.value }))} placeholder="Ex.: Supino inclinado" />
             </Field>
             <Field label="Grupo muscular (opcional)" htmlFor="exgrupo">
-              <Input id="exgrupo" value={newEx.grupo} onChange={(e) => setNewEx((p) => ({ ...p, grupo: e.target.value }))} placeholder="Ex.: Peito" />
+              <Input
+                id="exgrupo"
+                list="grupos-card"
+                value={newEx.grupo}
+                onChange={(e) => setNewEx((p) => ({ ...p, grupo: e.target.value }))}
+                placeholder="Ex.: Peito"
+              />
+              <datalist id="grupos-card">
+                {grupos.map((g) => (
+                  <option key={g} value={g} />
+                ))}
+              </datalist>
             </Field>
             <Button onClick={create} disabled={pending || !newEx.nome.trim()}>
               Criar e continuar

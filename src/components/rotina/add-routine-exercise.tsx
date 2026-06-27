@@ -38,6 +38,14 @@ export function AddRoutineExercise({
     return q ? exercicios.filter((e) => e.nome.toLowerCase().includes(q)) : exercicios;
   }, [query, exercicios]);
 
+  const grupos = useMemo(
+    () =>
+      [...new Set(exercicios.map((e) => e.grupo_muscular).filter((g): g is string => !!g))].sort((a, b) =>
+        a.localeCompare(b, "pt-BR"),
+      ),
+    [exercicios],
+  );
+
   function reset() {
     setMode("pick");
     setQuery("");
@@ -153,10 +161,16 @@ export function AddRoutineExercise({
             <Field label="Grupo muscular (opcional)" htmlFor="rexgrupo">
               <Input
                 id="rexgrupo"
+                list="grupos-rotina"
                 value={newEx.grupo}
                 onChange={(e) => setNewEx((p) => ({ ...p, grupo: e.target.value }))}
                 placeholder="Ex.: Bíceps"
               />
+              <datalist id="grupos-rotina">
+                {grupos.map((g) => (
+                  <option key={g} value={g} />
+                ))}
+              </datalist>
             </Field>
             <Button onClick={create} disabled={pending || !newEx.nome.trim()}>
               Criar e adicionar

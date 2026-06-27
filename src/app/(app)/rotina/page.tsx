@@ -104,9 +104,9 @@ export default async function RotinaPage({
         ) : (
           <div className="flex flex-col gap-3">
             {routine.map((r) => {
-              const all = setsByExercise.get(r.exercicio_id) ?? [];
-              const todaySets = all.filter((s) => s.data_referencia === todayRef);
-              const history = groupByDate(all.filter((s) => s.data_referencia !== todayRef));
+              const sessions = groupByDate(setsByExercise.get(r.exercicio_id) ?? []);
+              const recent = sessions.slice(0, 4);
+              const older = sessions.slice(4);
               return (
                 <Card key={r.id}>
                   <CardContent className="flex flex-col gap-3 py-3.5">
@@ -120,39 +120,29 @@ export default async function RotinaPage({
                       <DeleteButton action={removeRoutineExercise.bind(null, r.id)} label="Remover do dia" />
                     </div>
 
-                    {todaySets.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {todaySets.map((s) => (
-                          <span
-                            key={s.id}
-                            className="inline-flex items-center gap-1 rounded-lg bg-muted py-1 pl-2.5 pr-1 text-sm"
-                          >
-                            <span className="font-medium">{setLabel(s)}</span>
-                            <DeleteButton action={deleteSet.bind(null, s.id)} className="size-6" />
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Sem séries registradas hoje.</p>
-                    )}
-
                     <LogSetForm exercicioId={r.exercicio_id} dia={dia} />
 
-                    {history.length > 0 ? (
-                      <details className="group">
-                        <summary className="flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground">
-                          <History className="size-4" /> Histórico ({history.length})
-                        </summary>
-                        <div className="mt-2 flex flex-col gap-2 border-l-2 pl-3">
-                          {history.map(([date, items]) => (
-                            <div key={date}>
-                              <p className="text-xs font-medium text-muted-foreground">{formatDateRef(date)}</p>
-                              <p className="text-sm">{items.map(setLabel).join(" · ")}</p>
+                    {sessions.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Sem séries registradas. Registre a primeira acima.</p>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {recent.map(([date, items]) => (
+                          <SessionBlock key={date} date={date} items={items} isToday={date === todayRef} />
+                        ))}
+                        {older.length > 0 ? (
+                          <details className="group">
+                            <summary className="flex cursor-pointer items-center gap-1.5 py-1 text-sm text-muted-foreground">
+                              <History className="size-4" /> Sessões anteriores ({older.length})
+                            </summary>
+                            <div className="mt-2 flex flex-col gap-2">
+                              {older.map(([date, items]) => (
+                                <SessionBlock key={date} date={date} items={items} isToday={false} />
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      </details>
-                    ) : null}
+                          </details>
+                        ) : null}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               );
@@ -166,6 +156,46 @@ export default async function RotinaPage({
 
 function setLabel(s: SerieRegistro): string {
   return `${s.series}×${s.repeticoes} · ${nf(s.peso_kg, 1)} kg`;
+}
+
+function weekdayOf(dateStr: string): number {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+function SessionBlock({
+  date,
+  items,
+  isToday,
+}: {
+  date: string;
+  items: SerieRegistro[];
+  isToday: boolean;
+}) {
+  return (
+    <div className={cn("rounded-xl border p-2.5", isToday ? "border-primary/40 bg-primary/5" : "bg-muted/30")}>
+      <div className="mb-1.5 flex items-center justify-between">
+        <p className="text-xs font-semibold">
+          {isToday ? "Hoje" : WEEKDAYS_SHORT[weekdayOf(date)]} · {formatDateRef(date).slice(0, 5)}
+        </p>
+        <span className="text-[11px] text-muted-foreground">
+          {items.length} {items.length === 1 ? "série" : "séries"}
+        </span>
+      </div>
+      {isToday ? (
+        <div className="flex flex-wrap gap-1.5">
+          {items.map((s) => (
+            <span key={s.id} className="inline-flex items-center gap-1 rounded-lg bg-card py-1 pl-2.5 pr-1 text-sm shadow-sm">
+              <span className="font-medium">{setLabel(s)}</span>
+              <DeleteButton action={deleteSet.bind(null, s.id)} className="size-6" />
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm">{items.map(setLabel).join(" · ")}</p>
+      )}
+    </div>
+  );
 }
 
 function groupByDate(items: SerieRegistro[]): [string, SerieRegistro[]][] {
