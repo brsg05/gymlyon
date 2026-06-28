@@ -1,16 +1,16 @@
 import Link from "next/link";
-import { Dumbbell, History } from "lucide-react";
+import { Dumbbell, History, LineChart, ChevronRight, CalendarDays } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
-import { TreinosTabs } from "@/components/treinos-tabs";
+import { TrainingCalendar } from "@/components/training-calendar";
 import { AddRoutineExercise } from "@/components/rotina/add-routine-exercise";
 import { LogSetForm } from "@/components/rotina/log-set-form";
 import { DeleteButton } from "@/components/delete-button";
 import { createClient } from "@/lib/supabase/server";
 import { removeRoutineExercise, deleteSet } from "@/lib/actions/rotina";
-import { dayRef, todayWeekday, formatDateRef } from "@/lib/domain/time";
+import { now, dayRef, todayWeekday, formatDateRef } from "@/lib/domain/time";
 import { WEEKDAYS_SHORT, WEEKDAYS_FULL } from "@/lib/domain/constants";
 import { cn, nf } from "@/lib/utils";
 import type { Exercicio, RotinaExercicio, SerieRegistro } from "@/lib/types";
@@ -28,8 +28,22 @@ export default async function RotinaPage({
   const dia = Number.isInteger(parsed) && parsed >= 0 && parsed <= 6 ? parsed : today;
   const todayRef = dayRef();
 
+  const nowTz = now();
+  const year = nowTz.getFullYear();
+  const month = nowTz.getMonth() + 1;
+  const todayDay = nowTz.getDate();
+  const mm = String(month).padStart(2, "0");
+  const monthStart = `${year}-${mm}-01`;
+  const monthEnd = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+
   const supabase = await createClient();
-  const [{ data: routineRows }, { data: setRows }, { data: catalog }] = await Promise.all([
+  const [
+    { data: routineRows },
+    { data: setRows },
+    { data: catalog },
+    { data: monthSets },
+    { data: recentSets },
+  ] = await Promise.all([
     supabase
       .from("rotina_exercicio")
       .select("*, exercicio(nome, grupo_muscular)")
@@ -42,6 +56,16 @@ export default async function RotinaPage({
       .order("registrado_em", { ascending: false })
       .limit(400),
     supabase.from("exercicio").select("id, nome, grupo_muscular").order("nome"),
+    supabase
+      .from("serie_registro")
+      .select("data_referencia")
+      .gte("data_referencia", monthStart)
+      .lt("data_referencia", monthEnd),
+    supabase
+      .from("serie_registro")
+      .select("data_referencia, exercicio_id")
+      .order("data_referencia", { ascending: false })
+      .limit(500),
   ]);
 
   const routine = (routineRows ?? []) as unknown as RoutineRow[];
@@ -55,12 +79,27 @@ export default async function RotinaPage({
     setsByExercise.set(s.exercicio_id, arr);
   }
 
+  // Dia treinado = existe ao menos uma série registrada na data.
+  const trainedDays = new Set<number>(
+    ((monthSets ?? []) as { data_referencia: string }[]).map((r) => Number(r.data_referencia.slice(8, 10))),
+  );
+
+  const dayExercises = new Map<string, Set<string>>();
+  const daySets = new Map<string, number>();
+  for (const r of (recentSets ?? []) as { data_referencia: string; exercicio_id: string }[]) {
+    if (!dayExercises.has(r.data_referencia)) dayExercises.set(r.data_referencia, new Set());
+    dayExercises.get(r.data_referencia)!.add(r.exercicio_id);
+    daySets.set(r.data_referencia, (daySets.get(r.data_referencia) ?? 0) + 1);
+  }
+  const recentDays = [...dayExercises.entries()]
+    .map(([date, exs]) => ({ date, exercicios: exs.size, series: daySets.get(date) ?? 0 }))
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .slice(0, 8);
+
   return (
     <>
       <PageHeader title="Rotina" subtitle="Exercícios fixos por dia" back="/dashboard" />
       <div className="flex flex-col gap-4 px-4 pt-4">
-        <TreinosTabs />
-
         <div className="grid grid-cols-7 gap-1.5">
           {WEEKDAYS_SHORT.map((label, i) => {
             const active = i === dia;
@@ -149,6 +188,55 @@ export default async function RotinaPage({
             })}
           </div>
         )}
+
+        <div className="mt-2 flex flex-col gap-4 border-t pt-5">
+          <Link
+            href="/rotina/exercicios"
+            className="flex items-center justify-between rounded-xl border bg-card px-4 py-3.5 font-medium transition-colors hover:bg-muted"
+          >
+            <span className="flex items-center gap-3">
+              <LineChart className="size-5 text-primary" /> Evolução por exercício
+            </span>
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </Link>
+
+          <Card>
+            <CardContent className="py-4">
+              <p className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <CalendarDays className="size-4" /> Dias treinados
+              </p>
+              <TrainingCalendar year={year} month1to12={month} trainedDays={trainedDays} todayDay={todayDay} />
+            </CardContent>
+          </Card>
+
+          <section>
+            <p className="mb-2 text-sm font-medium text-muted-foreground">Últimos treinos</p>
+            {recentDays.length === 0 ? (
+              <Card>
+                <CardContent className="p-2">
+                  <EmptyState icon={Dumbbell} title="Nenhum treino ainda" description="Registre séries para marcar um dia treinado." />
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {recentDays.map((d) => (
+                  <Card key={d.date}>
+                    <CardContent className="flex items-center justify-between py-3">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{formatDateRef(d.date)}</p>
+                        {d.date === todayRef ? <Badge>Hoje</Badge> : null}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {d.exercicios} {d.exercicios === 1 ? "exercício" : "exercícios"} · {d.series}{" "}
+                        {d.series === 1 ? "série" : "séries"}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </>
   );

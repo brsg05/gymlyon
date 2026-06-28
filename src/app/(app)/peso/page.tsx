@@ -9,14 +9,22 @@ import { LineAreaChart } from "@/components/charts/line-area-chart";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/queries";
 import { deleteWeight } from "@/lib/actions/wellness";
-import { formatDateBR } from "@/lib/domain/time";
+import { dayRef, formatDateRef, formatTimeBR } from "@/lib/domain/time";
 import { nf } from "@/lib/utils";
 import type { RegistroPeso } from "@/lib/types";
+
+interface DaySession {
+  date: string;
+  measurements: RegistroPeso[];
+  avg: number;
+  min: number;
+  max: number;
+}
 
 export default async function PesoPage() {
   const supabase = await createClient();
   const [{ data: rows }, profile] = await Promise.all([
-    supabase.from("registro_peso").select("*").order("medido_em", { ascending: false }).limit(60),
+    supabase.from("registro_peso").select("*").order("medido_em", { ascending: false }).limit(120),
     getProfile(),
   ]);
   const weights = (rows ?? []) as RegistroPeso[];
@@ -24,9 +32,31 @@ export default async function PesoPage() {
   const inicial = profile?.peso_inicial_kg ?? null;
   const delta = latest && inicial != null ? latest.peso_kg - inicial : null;
 
-  const chart = [...weights]
+  // Agrupa por dia: cada dia é uma "sessão". A tendência usa a média diária,
+  // separando flutuação dentro do dia de mudança real de peso.
+  const byDay = new Map<string, RegistroPeso[]>();
+  for (const w of weights) {
+    const d = dayRef(w.medido_em);
+    const arr = byDay.get(d) ?? [];
+    arr.push(w);
+    byDay.set(d, arr);
+  }
+  const sessions: DaySession[] = [...byDay.entries()]
+    .map(([date, ms]) => {
+      const vals = ms.map((m) => Number(m.peso_kg));
+      return {
+        date,
+        measurements: ms,
+        avg: vals.reduce((a, b) => a + b, 0) / vals.length,
+        min: Math.min(...vals),
+        max: Math.max(...vals),
+      };
+    })
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const chart = [...sessions]
     .reverse()
-    .map((w) => ({ label: formatDateBR(w.medido_em).slice(0, 5), value: Number(w.peso_kg) }));
+    .map((s) => ({ label: formatDateRef(s.date).slice(0, 5), value: Math.round(s.avg * 10) / 10 }));
 
   return (
     <>
@@ -53,7 +83,7 @@ export default async function PesoPage() {
         {chart.length >= 2 ? (
           <Card>
             <CardContent className="py-4">
-              <p className="mb-2 text-sm font-medium text-muted-foreground">Evolução</p>
+              <p className="mb-1 text-sm font-medium text-muted-foreground">Evolução (média diária)</p>
               <LineAreaChart data={chart} unit=" kg" />
             </CardContent>
           </Card>
@@ -62,26 +92,45 @@ export default async function PesoPage() {
         <WeightForm />
 
         <section>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">Histórico</p>
-          <Card>
-            <CardContent className="p-2">
-              {weights.length === 0 ? (
+          <p className="mb-2 text-sm font-medium text-muted-foreground">Histórico por dia</p>
+          {sessions.length === 0 ? (
+            <Card>
+              <CardContent className="p-2">
                 <EmptyState icon={Scale} title="Sem registros" description="Registre seu peso para ver a evolução." />
-              ) : (
-                <ul className="divide-y">
-                  {weights.map((w) => (
-                    <li key={w.id} className="flex items-center justify-between px-2 py-2.5">
-                      <span className="font-medium">{nf(w.peso_kg, 1)} kg</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">{formatDateBR(w.medido_em)}</span>
-                        <DeleteButton action={deleteWeight.bind(null, w.id)} />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {sessions.map((s) => (
+                <Card key={s.date}>
+                  <CardContent className="flex flex-col gap-1.5 py-3">
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold">{formatDateRef(s.date)}</p>
+                      <p className="text-lg font-bold">
+                        {nf(s.avg, 1)} <span className="text-xs font-medium text-muted-foreground">kg{s.measurements.length > 1 ? " méd." : ""}</span>
+                      </p>
+                    </div>
+                    {s.measurements.length > 1 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Flutuação no dia: {nf(s.min, 1)}–{nf(s.max, 1)} kg · {s.measurements.length} medições
+                      </p>
+                    ) : null}
+                    <ul className="divide-y">
+                      {s.measurements.map((m) => (
+                        <li key={m.id} className="flex items-center justify-between py-1.5 text-sm">
+                          <span className="font-medium">{nf(m.peso_kg, 1)} kg</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-muted-foreground">{formatTimeBR(m.medido_em)}</span>
+                            <DeleteButton action={deleteWeight.bind(null, m.id)} className="size-7" />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </>

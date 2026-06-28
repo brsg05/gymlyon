@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Droplets, Flame, Beef, Scale, Moon, Timer, Target } from "lucide-react";
+import { Droplets, Flame, Beef, Scale, Moon, Dumbbell, Target } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,10 +12,10 @@ import {
   getMeals,
   getSleepForDay,
   getLatestWeight,
-  getTrainingSeconds,
+  getTrainedToday,
   getActiveGoals,
 } from "@/lib/queries";
-import { dayRef, now, formatDuration } from "@/lib/domain/time";
+import { dayRef, now } from "@/lib/domain/time";
 import { dailyDeficit, sum } from "@/lib/domain/calc";
 import { metaProgress } from "@/lib/domain/goals";
 import { META_LABEL, META_UNIT } from "@/lib/domain/constants";
@@ -23,13 +23,13 @@ import { intf, nf } from "@/lib/utils";
 
 export default async function DashboardPage() {
   const today = dayRef();
-  const [profile, water, meals, sleep, weight, trainingSec, goals] = await Promise.all([
+  const [profile, water, meals, sleep, weight, treino, goals] = await Promise.all([
     getProfile(),
     getWaterEntries(today),
     getMeals(today),
     getSleepForDay(today),
     getLatestWeight(),
-    getTrainingSeconds(today),
+    getTrainedToday(today),
     getActiveGoals(),
   ]);
 
@@ -137,13 +137,14 @@ export default async function DashboardPage() {
           footer={sleep ? "Última noite" : undefined}
         />
         <StatCard
-          icon={Timer}
-          label="Tempo treinado"
+          icon={Dumbbell}
+          label="Treino"
           accent="primary"
-          href="/treinos"
-          empty={trainingSec === 0}
-          value={trainingSec > 0 ? formatDuration(trainingSec) : undefined}
-          footer={trainingSec > 0 ? "Hoje" : undefined}
+          href="/rotina"
+          empty={treino.series === 0}
+          value={treino.series > 0 ? treino.series : undefined}
+          unit={treino.series > 0 ? (treino.series === 1 ? "série" : "séries") : undefined}
+          footer={treino.series > 0 ? `${treino.exercicios} exerc.` : undefined}
         />
       </div>
 

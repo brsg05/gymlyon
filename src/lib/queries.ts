@@ -62,15 +62,14 @@ export async function getLatestWeight(): Promise<RegistroPeso | null> {
   return data as RegistroPeso | null;
 }
 
-export async function getTrainingSeconds(date: string): Promise<number> {
+export async function getTrainedToday(date: string): Promise<{ series: number; exercicios: number }> {
   const supabase = await createClient();
-  const { start, end } = dayRangeUtc(date);
   const { data } = await supabase
-    .from("treino")
-    .select("duracao_segundos")
-    .gte("inicio_em", start)
-    .lt("inicio_em", end);
-  return (data ?? []).reduce((acc: number, r) => acc + (r.duracao_segundos ?? 0), 0);
+    .from("serie_registro")
+    .select("exercicio_id")
+    .eq("data_referencia", date);
+  const rows = (data ?? []) as { exercicio_id: string }[];
+  return { series: rows.length, exercicios: new Set(rows.map((r) => r.exercicio_id)).size };
 }
 
 export async function getActiveGoals(): Promise<Meta[]> {
