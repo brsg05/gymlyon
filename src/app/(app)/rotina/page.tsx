@@ -7,15 +7,19 @@ import { Badge } from "@/components/ui/badge";
 import { TrainingCalendar } from "@/components/training-calendar";
 import { AddRoutineExercise } from "@/components/rotina/add-routine-exercise";
 import { LogSetForm } from "@/components/rotina/log-set-form";
+import { SetChip } from "@/components/rotina/set-chip";
+import { EditExercise } from "@/components/rotina/edit-exercise";
 import { DeleteButton } from "@/components/delete-button";
 import { createClient } from "@/lib/supabase/server";
-import { removeRoutineExercise, deleteSet } from "@/lib/actions/rotina";
+import { removeRoutineExercise } from "@/lib/actions/rotina";
 import { now, dayRef, todayWeekday, formatDateRef } from "@/lib/domain/time";
 import { WEEKDAYS_SHORT, WEEKDAYS_FULL } from "@/lib/domain/constants";
-import { cn, nf } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { Exercicio, RotinaExercicio, SerieRegistro } from "@/lib/types";
 
-type RoutineRow = RotinaExercicio & { exercicio: Pick<Exercicio, "nome" | "grupo_muscular"> | null };
+type RoutineRow = RotinaExercicio & {
+  exercicio: Pick<Exercicio, "nome" | "grupo_muscular" | "user_id"> | null;
+};
 
 export default async function RotinaPage({
   searchParams,
@@ -43,10 +47,13 @@ export default async function RotinaPage({
     { data: catalog },
     { data: monthSets },
     { data: recentSets },
+    {
+      data: { user },
+    },
   ] = await Promise.all([
     supabase
       .from("rotina_exercicio")
-      .select("*, exercicio(nome, grupo_muscular)")
+      .select("*, exercicio(nome, grupo_muscular, user_id)")
       .eq("dia_semana", dia)
       .order("ordem", { ascending: true }),
     supabase
@@ -66,11 +73,15 @@ export default async function RotinaPage({
       .select("data_referencia, exercicio_id")
       .order("data_referencia", { ascending: false })
       .limit(500),
+    supabase.auth.getUser(),
   ]);
 
   const routine = (routineRows ?? []) as unknown as RoutineRow[];
   const sets = (setRows ?? []) as SerieRegistro[];
   const exercicios = (catalog ?? []) as Pick<Exercicio, "id" | "nome" | "grupo_muscular">[];
+  const grupos = [...new Set(exercicios.map((e) => e.grupo_muscular).filter((g): g is string => !!g))].sort((a, b) =>
+    a.localeCompare(b, "pt-BR"),
+  );
 
   const setsByExercise = new Map<string, SerieRegistro[]>();
   for (const s of sets) {
@@ -156,7 +167,17 @@ export default async function RotinaPage({
                           <p className="text-xs text-muted-foreground">{r.exercicio.grupo_muscular}</p>
                         ) : null}
                       </div>
-                      <DeleteButton action={removeRoutineExercise.bind(null, r.id)} label="Remover do dia" />
+                      <div className="flex items-center">
+                        {user && r.exercicio && r.exercicio.user_id === user.id ? (
+                          <EditExercise
+                            id={r.exercicio_id}
+                            nome={r.exercicio.nome}
+                            grupo={r.exercicio.grupo_muscular}
+                            grupos={grupos}
+                          />
+                        ) : null}
+                        <DeleteButton action={removeRoutineExercise.bind(null, r.id)} label="Remover do dia" />
+                      </div>
                     </div>
 
                     <LogSetForm exercicioId={r.exercicio_id} dia={dia} />
@@ -242,10 +263,6 @@ export default async function RotinaPage({
   );
 }
 
-function setLabel(s: SerieRegistro): string {
-  return `${s.series}×${s.repeticoes} · ${nf(s.peso_kg, 1)} kg`;
-}
-
 function weekdayOf(dateStr: string): number {
   const [y, m, d] = dateStr.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
@@ -270,18 +287,11 @@ function SessionBlock({
           {items.length} {items.length === 1 ? "série" : "séries"}
         </span>
       </div>
-      {isToday ? (
-        <div className="flex flex-wrap gap-1.5">
-          {items.map((s) => (
-            <span key={s.id} className="inline-flex items-center gap-1 rounded-lg bg-card py-1 pl-2.5 pr-1 text-sm shadow-sm">
-              <span className="font-medium">{setLabel(s)}</span>
-              <DeleteButton action={deleteSet.bind(null, s.id)} className="size-6" />
-            </span>
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm">{items.map(setLabel).join(" · ")}</p>
-      )}
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((s) => (
+          <SetChip key={s.id} set={s} highlight={isToday} />
+        ))}
+      </div>
     </div>
   );
 }

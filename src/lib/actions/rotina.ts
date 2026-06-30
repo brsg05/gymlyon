@@ -8,6 +8,8 @@ type Result = { error?: string };
 
 function revalidate() {
   revalidatePath("/rotina");
+  revalidatePath("/rotina/exercicios");
+  revalidatePath("/dashboard");
 }
 
 export async function addRoutineExercise(dia_semana: number, exercicio_id: string): Promise<Result> {
@@ -83,10 +85,55 @@ export async function logSet(input: {
   return {};
 }
 
+export async function updateSet(
+  id: string,
+  input: { series: number; repeticoes: number; peso_kg: number; data_referencia: string },
+): Promise<Result> {
+  if (!(input.series >= 1) || !(input.repeticoes >= 1)) return { error: "Séries e repetições inválidas." };
+  if (!(input.peso_kg >= 0)) return { error: "Peso inválido." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.data_referencia)) return { error: "Data inválida." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("serie_registro")
+    .update({
+      series: input.series,
+      repeticoes: input.repeticoes,
+      peso_kg: input.peso_kg,
+      data_referencia: input.data_referencia,
+    })
+    .eq("id", id);
+  if (error) return { error: error.message };
+  revalidate();
+  return {};
+}
+
 export async function deleteSet(id: string): Promise<Result> {
   const supabase = await createClient();
   const { error } = await supabase.from("serie_registro").delete().eq("id", id);
   if (error) return { error: error.message };
+  revalidate();
+  return {};
+}
+
+export async function updateExercise(
+  id: string,
+  input: { nome: string; grupo_muscular?: string | null },
+): Promise<Result> {
+  const nome = input.nome.trim();
+  if (!nome) return { error: "Informe o nome." };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sessão expirada." };
+  const { data, error } = await supabase
+    .from("exercicio")
+    .update({ nome, grupo_muscular: input.grupo_muscular?.trim() || null })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("id");
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: "Exercícios padrão não podem ser editados." };
   revalidate();
   return {};
 }
