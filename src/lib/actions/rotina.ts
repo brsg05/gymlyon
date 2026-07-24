@@ -61,6 +61,23 @@ export async function removeRoutineExercise(id: string): Promise<Result> {
   return {};
 }
 
+/** Persiste a nova ordem dos exercícios de um dia (índice no array = campo `ordem`). */
+export async function reorderRoutineExercises(dia_semana: number, orderedIds: string[]): Promise<Result> {
+  if (dia_semana < 0 || dia_semana > 6) return { error: "Dia inválido." };
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) return {};
+  const supabase = await createClient();
+  // Sem constraint de unicidade em `ordem`, então atualizações diretas por índice são seguras.
+  const results = await Promise.all(
+    orderedIds.map((id, i) =>
+      supabase.from("rotina_exercicio").update({ ordem: i }).eq("id", id).eq("dia_semana", dia_semana),
+    ),
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) return { error: failed.error.message };
+  revalidate();
+  return {};
+}
+
 export async function logSet(input: {
   exercicio_id: string;
   dia_semana: number;

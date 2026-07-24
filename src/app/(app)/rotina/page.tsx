@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { TrainingCalendar } from "@/components/training-calendar";
+import { SortableRoutine, type SortableItem } from "@/components/rotina/sortable-routine";
 import { AddRoutineExercise } from "@/components/rotina/add-routine-exercise";
 import { LogSetForm } from "@/components/rotina/log-set-form";
 import { SetChip } from "@/components/rotina/set-chip";
@@ -152,14 +153,17 @@ export default async function RotinaPage({
             </CardContent>
           </Card>
         ) : (
-          <div className="flex flex-col gap-3">
-            {routine.map((r) => {
+          <SortableRoutine
+            dia={dia}
+            items={routine.map<SortableItem>((r) => {
               const sessions = groupByDate(setsByExercise.get(r.exercicio_id) ?? []);
               const recent = sessions.slice(0, 4);
               const older = sessions.slice(4);
-              return (
-                <Card key={r.id}>
-                  <CardContent className="flex flex-col gap-3 py-3.5">
+              return {
+                id: r.id,
+                node: (
+                  <Card>
+                    <CardContent className="flex flex-col gap-3 py-3.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="font-semibold">{r.exercicio?.nome ?? "Exercício"}</p>
@@ -203,11 +207,12 @@ export default async function RotinaPage({
                         ) : null}
                       </div>
                     )}
-                  </CardContent>
-                </Card>
-              );
+                    </CardContent>
+                  </Card>
+                ),
+              };
             })}
-          </div>
+          />
         )}
 
         <div className="mt-2 flex flex-col gap-4 border-t pt-5">
