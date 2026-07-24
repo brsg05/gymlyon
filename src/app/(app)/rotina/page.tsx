@@ -226,7 +226,14 @@ export default async function RotinaPage({
               <p className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <CalendarDays className="size-4" /> Dias treinados
               </p>
-              <TrainingCalendar year={year} month1to12={month} trainedDays={trainedDays} todayDay={todayDay} />
+              <TrainingCalendar
+                initialYear={year}
+                initialMonth1to12={month}
+                initialTrainedDays={[...trainedDays]}
+                todayYear={year}
+                todayMonth1to12={month}
+                todayDay={todayDay}
+              />
             </CardContent>
           </Card>
 

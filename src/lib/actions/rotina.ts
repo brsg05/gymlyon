@@ -115,6 +115,24 @@ export async function deleteSet(id: string): Promise<Result> {
   return {};
 }
 
+/** Dias do mês (1-31) em que houve ao menos uma série registrada. */
+export async function getTrainedDays(year: number, month1to12: number): Promise<number[]> {
+  if (!Number.isInteger(year) || !Number.isInteger(month1to12) || month1to12 < 1 || month1to12 > 12) {
+    return [];
+  }
+  const mm = String(month1to12).padStart(2, "0");
+  const monthStart = `${year}-${mm}-01`;
+  const monthEnd =
+    month1to12 === 12 ? `${year + 1}-01-01` : `${year}-${String(month1to12 + 1).padStart(2, "0")}-01`;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("serie_registro")
+    .select("data_referencia")
+    .gte("data_referencia", monthStart)
+    .lt("data_referencia", monthEnd);
+  return [...new Set(((data ?? []) as { data_referencia: string }[]).map((r) => Number(r.data_referencia.slice(8, 10))))];
+}
+
 export async function updateExercise(
   id: string,
   input: { nome: string; grupo_muscular?: string | null },

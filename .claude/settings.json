@@ -1,4 +1,14 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"console.log\\(require\\('next/package.json'\\).version\\)\")",
+      "Bash(npx tsc *)",
+      "Bash(node ./node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npx next *)",
+      "Bash(npx eslint *)"
+    ]
+  },
   "enabledPlugins": {
     "security-guidance@claude-code-plugins": true
   }
