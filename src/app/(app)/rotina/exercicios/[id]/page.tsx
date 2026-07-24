@@ -3,7 +3,7 @@ import { TrendingUp } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { LineAreaChart } from "@/components/charts/line-area-chart";
+import { ExerciseEvolution, type EvolutionPoint } from "@/components/rotina/exercise-evolution";
 import { createClient } from "@/lib/supabase/server";
 import { formatDateRef } from "@/lib/domain/time";
 import { nf } from "@/lib/utils";
@@ -26,7 +26,7 @@ export default async function EvolucaoExercicioPage({ params }: { params: Promis
   if (!ex) notFound();
   const sets = (rows ?? []) as SerieRegistro[];
 
-  // Uma sessão por data: carga representativa = peso máximo do dia.
+  // Uma sessão por data, com três métricas: carga (peso máx.), 1RM estimado (Epley) e volume total.
   const byDate = new Map<string, SerieRegistro[]>();
   for (const s of sets) {
     const arr = byDate.get(s.data_referencia) ?? [];
@@ -34,21 +34,33 @@ export default async function EvolucaoExercicioPage({ params }: { params: Promis
     byDate.set(s.data_referencia, arr);
   }
   const sessions = [...byDate.entries()]
-    .map(([date, items]) => ({
-      date,
-      items,
-      maxPeso: Math.max(...items.map((i) => Number(i.peso_kg))),
-    }))
+    .map(([date, items]) => {
+      const nums = items.map((i) => ({
+        series: Number(i.series),
+        reps: Number(i.repeticoes),
+        peso: Number(i.peso_kg),
+      }));
+      return {
+        date,
+        items,
+        carga: Math.max(...nums.map((n) => n.peso)),
+        e1rm: Math.max(...nums.map((n) => n.peso * (1 + n.reps / 30))),
+        volume: nums.reduce((sum, n) => sum + n.series * n.reps * n.peso, 0),
+      };
+    })
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 
-  const chart = [...sessions]
-    .reverse()
-    .map((s) => ({ label: formatDateRef(s.date).slice(0, 5), value: Math.round(s.maxPeso * 10) / 10 }));
-  const recorde = sessions.reduce((m, s) => Math.max(m, s.maxPeso), 0);
+  // Pontos do gráfico em ordem cronológica (antigo → recente).
+  const points: EvolutionPoint[] = [...sessions].reverse().map((s) => ({
+    label: formatDateRef(s.date).slice(0, 5),
+    carga: Math.round(s.carga * 10) / 10,
+    e1rm: Math.round(s.e1rm * 10) / 10,
+    volume: Math.round(s.volume),
+  }));
 
   return (
     <>
-      <PageHeader title={ex.nome} subtitle={ex.grupo_muscular ?? "Evolução de carga"} back="/rotina/exercicios" />
+      <PageHeader title={ex.nome} subtitle={ex.grupo_muscular ?? "Evolução"} back="/rotina/exercicios" />
       <div className="flex flex-col gap-5 px-4 pt-4">
         {sessions.length < 2 ? (
           <Card>
@@ -61,25 +73,7 @@ export default async function EvolucaoExercicioPage({ params }: { params: Promis
             </CardContent>
           </Card>
         ) : (
-          <>
-            <Card>
-              <CardContent className="flex items-end justify-between py-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Recorde de carga</p>
-                  <p className="text-3xl font-bold">
-                    {nf(recorde, 1)} <span className="text-base font-medium text-muted-foreground">kg</span>
-                  </p>
-                </div>
-                <p className="text-sm text-muted-foreground">{sessions.length} sessões</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="py-4">
-                <p className="mb-2 text-sm font-medium text-muted-foreground">Carga máxima por sessão</p>
-                <LineAreaChart data={chart} unit=" kg" />
-              </CardContent>
-            </Card>
-          </>
+          <ExerciseEvolution points={points} sessionCount={sessions.length} />
         )}
 
         <section>
