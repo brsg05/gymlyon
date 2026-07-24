@@ -11,6 +11,28 @@ export type SortableItem = { id: string; node: ReactNode };
 const sortedKey = (ids: string[]) => [...ids].sort().join("|");
 const sameOrder = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
+/** Distância da borda da viewport (px) onde o auto-scroll começa. */
+const SCROLL_EDGE = 72;
+/** Velocidade máxima do auto-scroll (px por frame). */
+const SCROLL_SPEED = 18;
+
+type Drag = {
+  id: string;
+  pointerId: number;
+  /** Posição do ponteiro no documento (clientY + scrollY) no início do arrasto. */
+  startDocY: number;
+  lastClientY: number;
+  /** Quanto os vizinhos se deslocam para abrir espaço: altura do item + gap. */
+  displacement: number;
+  /** Índice original do item arrastado. */
+  fromIdx: number;
+  /** Demais itens em ordem visual, com o centro em coordenadas de documento (medido 1x no grab). */
+  others: { id: string; midDocY: number }[];
+  /** Posição de inserção corrente (0..others.length). */
+  targetIdx: number;
+  raf: number;
+};
+
 export function SortableRoutine({ dia, items }: { dia: number; items: SortableItem[] }) {
   const incomingIds = items.map((i) => i.id);
   const [order, setOrderState] = useState<string[]>(incomingIds);
@@ -21,12 +43,10 @@ export function SortableRoutine({ dia, items }: { dia: number; items: SortableIt
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef(new Map<string, HTMLDivElement | null>());
   const orderRef = useRef(order);
-  const draggingIdRef = useRef<string | null>(null);
-  const pointerYRef = useRef<number | null>(null);
-  const grabOffsetRef = useRef(0);
-  const orderAtGrabRef = useRef<string[]>(order);
+  const dragRef = useRef<Drag | null>(null);
+  const pendingCleanupRef = useRef(false);
 
-  // Usado apenas em handlers: mantém o ref em sincronia síncrona com o estado durante o arrasto.
+  // Usado apenas em handlers: mantém o ref em sincronia síncrona com o estado.
   const setOrder = (next: string[]) => {
     orderRef.current = next;
     setOrderState(next);
@@ -48,88 +68,147 @@ export function SortableRoutine({ dia, items }: { dia: number; items: SortableIt
   const byId = new Map(items.map((i) => [i.id, i.node]));
   const sortable = items.length > 1;
 
-  function applyDragTransform() {
-    const id = draggingIdRef.current;
-    const container = containerRef.current;
-    if (!id || !container || pointerYRef.current == null) return;
-    const el = rowRefs.current.get(id);
-    if (!el) return;
-    const containerTop = container.getBoundingClientRect().top;
-    const laidOutTop = containerTop + el.offsetTop;
-    const desiredTop = pointerYRef.current - grabOffsetRef.current;
-    el.style.transform = `translateY(${desiredTop - laidOutTop}px) scale(1.02)`;
+  function clearRowStyles() {
+    for (const el of rowRefs.current.values()) {
+      if (!el) continue;
+      el.style.transform = "";
+      el.style.transition = "";
+      el.style.willChange = "";
+    }
   }
 
-  // Após um reflow por reordenação, recalcula o transform para o item seguir o dedo sem "pulos".
+  // Limpa os transforms no mesmo frame em que o React reordena o DOM (sem "pulo" visual).
   useLayoutEffect(() => {
-    if (draggingIdRef.current) applyDragTransform();
-  }, [order]);
+    if (!pendingCleanupRef.current) return;
+    pendingCleanupRef.current = false;
+    clearRowStyles();
+  }, [order, draggingId]);
 
-  function computeOrder(pointerY: number): string[] | null {
-    const dragId = draggingIdRef.current;
-    if (!dragId) return null;
-    const others = orderRef.current.filter((x) => x !== dragId);
-    let insertAt = others.length;
-    for (let i = 0; i < others.length; i++) {
-      const el = rowRefs.current.get(others[i]);
-      if (!el) continue;
-      const rect = el.getBoundingClientRect();
-      if (pointerY < rect.top + rect.height / 2) {
-        insertAt = i;
+  // Cancela o loop se o componente desmontar no meio de um arrasto.
+  useEffect(
+    () => () => {
+      if (dragRef.current) cancelAnimationFrame(dragRef.current.raf);
+    },
+    [],
+  );
+
+  // Loop por frame: segue o dedo, auto-scroll na borda e desloca vizinhos via CSS puro.
+  // Nada de re-render nem de leitura de layout aqui — toda a geometria foi medida no grab.
+  function frame() {
+    const d = dragRef.current;
+    if (!d) return;
+
+    // Auto-scroll quando o ponteiro se aproxima da borda da viewport (permite
+    // levar o primeiro item ao fim de uma lista maior que a tela em um gesto só).
+    const y = d.lastClientY;
+    const vh = window.innerHeight;
+    let dy = 0;
+    if (y < SCROLL_EDGE) dy = -SCROLL_SPEED * Math.min(1, (SCROLL_EDGE - y) / SCROLL_EDGE);
+    else if (y > vh - SCROLL_EDGE) dy = SCROLL_SPEED * Math.min(1, (y - (vh - SCROLL_EDGE)) / SCROLL_EDGE);
+    if (dy !== 0) window.scrollBy(0, dy);
+
+    // Em coordenadas de documento, as posições medidas no grab continuam válidas
+    // mesmo com a página rolando.
+    const docY = y + window.scrollY;
+
+    const el = rowRefs.current.get(d.id);
+    if (el) el.style.transform = `translate3d(0, ${docY - d.startDocY}px, 0) scale(1.02)`;
+
+    let idx = d.others.length;
+    for (let i = 0; i < d.others.length; i++) {
+      if (docY < d.others[i].midDocY) {
+        idx = i;
         break;
       }
     }
-    const next = [...others];
-    next.splice(insertAt, 0, dragId);
-    return next;
+    if (idx !== d.targetIdx) {
+      d.targetIdx = idx;
+      for (let j = 0; j < d.others.length; j++) {
+        const o = rowRefs.current.get(d.others[j].id);
+        if (!o) continue;
+        const shift =
+          j < d.fromIdx && j >= idx ? d.displacement : j >= d.fromIdx && j < idx ? -d.displacement : 0;
+        o.style.transform = shift ? `translate3d(0, ${shift}px, 0)` : "";
+      }
+    }
+
+    d.raf = requestAnimationFrame(frame);
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLButtonElement>, id: string) {
-    if (!sortable) return;
+    if (!sortable || dragRef.current) return;
+    const container = containerRef.current;
     const el = rowRefs.current.get(id);
-    if (!el) return;
+    if (!container || !el) return;
     e.preventDefault();
-    grabOffsetRef.current = e.clientY - el.getBoundingClientRect().top;
-    pointerYRef.current = e.clientY;
-    draggingIdRef.current = id;
-    orderAtGrabRef.current = orderRef.current;
+
+    // Única medição de layout de todo o arrasto.
+    const scrollY = window.scrollY;
+    const gap = parseFloat(getComputedStyle(container).rowGap) || 0;
+    const ids = orderRef.current;
+    const others: Drag["others"] = [];
+    for (const oid of ids) {
+      if (oid === id) continue;
+      const oel = rowRefs.current.get(oid);
+      if (!oel) continue;
+      const r = oel.getBoundingClientRect();
+      others.push({ id: oid, midDocY: r.top + scrollY + r.height / 2 });
+      oel.style.transition = "transform 150ms ease";
+    }
+    const rect = el.getBoundingClientRect();
+    el.style.willChange = "transform";
+
+    const fromIdx = ids.indexOf(id);
+    dragRef.current = {
+      id,
+      pointerId: e.pointerId,
+      startDocY: e.clientY + scrollY,
+      lastClientY: e.clientY,
+      displacement: rect.height + gap,
+      fromIdx,
+      others,
+      targetIdx: fromIdx,
+      raf: 0,
+    };
     setDraggingId(id);
     e.currentTarget.setPointerCapture(e.pointerId);
-    applyDragTransform();
+    dragRef.current.raf = requestAnimationFrame(frame);
   }
 
+  // Só anota a posição; todo o trabalho acontece 1x por frame no loop de rAF.
   function onPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
-    if (!draggingIdRef.current) return;
-    e.preventDefault();
-    pointerYRef.current = e.clientY;
-    applyDragTransform();
-    const next = computeOrder(e.clientY);
-    if (next && !sameOrder(next, orderRef.current)) setOrder(next);
+    const d = dragRef.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    d.lastClientY = e.clientY;
   }
 
   function endDrag(e: React.PointerEvent<HTMLButtonElement>) {
-    const dragId = draggingIdRef.current;
-    if (!dragId) return;
+    const d = dragRef.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    dragRef.current = null;
+    cancelAnimationFrame(d.raf);
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {}
-    const el = rowRefs.current.get(dragId);
-    if (el) el.style.transform = "";
-    const finalOrder = orderRef.current;
-    const before = orderAtGrabRef.current;
-    draggingIdRef.current = null;
-    pointerYRef.current = null;
-    setDraggingId(null);
 
-    if (!sameOrder(finalOrder, before)) {
-      startTransition(async () => {
-        const res = await reorderRoutineExercises(dia, finalOrder);
-        if (res?.error) {
-          toast(res.error, "error");
-          setOrder(before);
-        }
-      });
-    }
+    const before = orderRef.current;
+    const others = before.filter((x) => x !== d.id);
+    const next = [...others];
+    next.splice(d.targetIdx, 0, d.id);
+
+    // Estilos inline são limpos no layout effect, já com o DOM na ordem final.
+    pendingCleanupRef.current = true;
+    setDraggingId(null);
+    if (sameOrder(next, before)) return;
+
+    setOrder(next);
+    startTransition(async () => {
+      const res = await reorderRoutineExercises(dia, next);
+      if (res?.error) {
+        toast(res.error, "error");
+        setOrder(before);
+      }
+    });
   }
 
   return (
